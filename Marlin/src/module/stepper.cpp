@@ -274,7 +274,7 @@ xyze_int8_t Stepper::count_direction{0};
 #define MINDIR(A) (count_direction[_AXIS(A)] < 0)
 #define MAXDIR(A) (count_direction[_AXIS(A)] > 0)
 
-#define STEPTEST(A,M,I) TERN0(HAS_ ##A## ##I## _ ##M, !(TEST(endstops.state(), A## ##I## _ ##M) && M## DIR(A)) && !locked_ ##A## ##I## _motor)
+#define STEPTEST(A,M,I) TERN0(USE_##A##I##_##M, !(TEST(endstops.state(), A##I##_##M) && M## DIR(A)) && !locked_ ##A##I##_motor)
 
 #define DUAL_ENDSTOP_APPLY_STEP(A,V)             \
   if (separate_multi_axis) {                     \
@@ -1610,7 +1610,7 @@ void Stepper::isr() {
 #if MINIMUM_STEPPER_PULSE || MAXIMUM_STEPPER_RATE
   #define ISR_PULSE_CONTROL 1
 #endif
-#if ISR_PULSE_CONTROL && DISABLED(I2S_STEPPER_STREAM)
+#if ISR_PULSE_CONTROL && MULTISTEPPING_LIMIT > 1 && DISABLED(I2S_STEPPER_STREAM)
   #define ISR_MULTI_STEPS 1
 #endif
 
@@ -1655,10 +1655,11 @@ void Stepper::pulse_phase_isr() {
   // Just update the value we will get at the end of the loop
   step_events_completed += events_to_do;
 
-  // Take multiple steps per interrupt (For high speed moves)
-  #if ISR_MULTI_STEPS
+  TERN_(ISR_PULSE_CONTROL, USING_TIMED_PULSE());
+
+  // Take multiple steps per interrupt. For high speed moves.
+  #if ENABLED(ISR_MULTI_STEPS)
     bool firstStep = true;
-    USING_TIMED_PULSE();
   #endif
   xyze_bool_t step_needed{0};
 
@@ -1944,7 +1945,7 @@ void Stepper::pulse_phase_isr() {
     TERN_(I2S_STEPPER_STREAM, i2s_push_sample());
 
     // TODO: need to deal with MINIMUM_STEPPER_PULSE over i2s
-    #if ISR_MULTI_STEPS
+    #if ISR_PULSE_CONTROL
       START_TIMED_PULSE();
       AWAIT_HIGH_PULSE();
     #endif
@@ -2333,7 +2334,8 @@ uint32_t Stepper::block_phase_isr() {
        */
       if (cutter.cutter_mode == CUTTER_MODE_DYNAMIC
         && planner.laser_inline.status.isPowered                  // isPowered flag set on any parsed G1, G2, G3, or G5 move; cleared on any others.
-        && cutter.last_block_power != current_block->laser.power  // Prevent constant update without change
+        && current_block                                          // Block may not be available if steps completed (see discard_current_block() above)
+        && cutter.last_block_power != current_block->laser.power  // Only update if the power changed
       ) {
         cutter.apply_power(current_block->laser.power);
         cutter.last_block_power = current_block->laser.power;
@@ -3952,22 +3954,22 @@ void Stepper::report_positions() {
           break;
       #endif
       #if HAS_I_MS_PINS
-        case  I_AXIS: WRITE(I_MS1_PIN, ms1); break
+        case  I_AXIS: WRITE(I_MS1_PIN, ms1); break;
       #endif
       #if HAS_J_MS_PINS
-        case  J_AXIS: WRITE(J_MS1_PIN, ms1); break
+        case  J_AXIS: WRITE(J_MS1_PIN, ms1); break;
       #endif
       #if HAS_K_MS_PINS
-        case  K_AXIS: WRITE(K_MS1_PIN, ms1); break
+        case  K_AXIS: WRITE(K_MS1_PIN, ms1); break;
       #endif
       #if HAS_U_MS_PINS
-        case  U_AXIS: WRITE(U_MS1_PIN, ms1); break
+        case  U_AXIS: WRITE(U_MS1_PIN, ms1); break;
       #endif
       #if HAS_V_MS_PINS
-        case  V_AXIS: WRITE(V_MS1_PIN, ms1); break
+        case  V_AXIS: WRITE(V_MS1_PIN, ms1); break;
       #endif
       #if HAS_W_MS_PINS
-        case  W_AXIS: WRITE(W_MS1_PIN, ms1); break
+        case  W_AXIS: WRITE(W_MS1_PIN, ms1); break;
       #endif
       #if HAS_E0_MS_PINS
         case  E_AXIS: WRITE(E0_MS1_PIN, ms1); break;
@@ -4032,22 +4034,22 @@ void Stepper::report_positions() {
           break;
       #endif
       #if HAS_I_MS_PINS
-        case  I_AXIS: WRITE(I_MS2_PIN, ms2); break
+        case  I_AXIS: WRITE(I_MS2_PIN, ms2); break;
       #endif
       #if HAS_J_MS_PINS
-        case  J_AXIS: WRITE(J_MS2_PIN, ms2); break
+        case  J_AXIS: WRITE(J_MS2_PIN, ms2); break;
       #endif
       #if HAS_K_MS_PINS
-        case  K_AXIS: WRITE(K_MS2_PIN, ms2); break
+        case  K_AXIS: WRITE(K_MS2_PIN, ms2); break;
       #endif
       #if HAS_U_MS_PINS
-        case  U_AXIS: WRITE(U_MS2_PIN, ms2); break
+        case  U_AXIS: WRITE(U_MS2_PIN, ms2); break;
       #endif
       #if HAS_V_MS_PINS
-        case  V_AXIS: WRITE(V_MS2_PIN, ms2); break
+        case  V_AXIS: WRITE(V_MS2_PIN, ms2); break;
       #endif
       #if HAS_W_MS_PINS
-        case  W_AXIS: WRITE(W_MS2_PIN, ms2); break
+        case  W_AXIS: WRITE(W_MS2_PIN, ms2); break;
       #endif
       #if HAS_E0_MS_PINS
         case  E_AXIS: WRITE(E0_MS2_PIN, ms2); break;
@@ -4111,23 +4113,23 @@ void Stepper::report_positions() {
           #endif
           break;
       #endif
-      #if HAS_I_MS_PINS
-        case  I_AXIS: WRITE(I_MS3_PIN, ms3); break
+      #if HAS_I_MS_PINS && PIN_EXISTS(I_MS3)
+        case  I_AXIS: WRITE(I_MS3_PIN, ms3); break;
       #endif
-      #if HAS_J_MS_PINS
-        case  J_AXIS: WRITE(J_MS3_PIN, ms3); break
+      #if HAS_J_MS_PINS && PIN_EXISTS(J_MS3)
+        case  J_AXIS: WRITE(J_MS3_PIN, ms3); break;
       #endif
-      #if HAS_K_MS_PINS
-        case  K_AXIS: WRITE(K_MS3_PIN, ms3); break
+      #if HAS_K_MS_PINS && PIN_EXISTS(K_MS3)
+        case  K_AXIS: WRITE(K_MS3_PIN, ms3); break;
       #endif
-      #if HAS_U_MS_PINS
-        case  U_AXIS: WRITE(U_MS3_PIN, ms3); break
+      #if HAS_U_MS_PINS && PIN_EXISTS(U_MS3)
+        case  U_AXIS: WRITE(U_MS3_PIN, ms3); break;
       #endif
-      #if HAS_V_MS_PINS
-        case  V_AXIS: WRITE(V_MS3_PIN, ms3); break
+      #if HAS_V_MS_PINS && PIN_EXISTS(V_MS3)
+        case  V_AXIS: WRITE(V_MS3_PIN, ms3); break;
       #endif
-      #if HAS_W_MS_PINS
-        case  W_AXIS: WRITE(W_MS3_PIN, ms3); break
+      #if HAS_W_MS_PINS && PIN_EXISTS(W_MS3)
+        case  W_AXIS: WRITE(W_MS3_PIN, ms3); break;
       #endif
       #if HAS_E0_MS_PINS && PIN_EXISTS(E0_MS3)
         case  E_AXIS: WRITE(E0_MS3_PIN, ms3); break;
